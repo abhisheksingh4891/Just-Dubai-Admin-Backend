@@ -40,7 +40,9 @@ const AdminSchema = mongoose.Schema({
     active: {
         type: Boolean,
         default: true
-    }
+    },
+    resetPasswordToken: String,
+    resetPasswordExpires: Date
 });
 
 const AdminModel = mongoose.model('Admin', AdminSchema);

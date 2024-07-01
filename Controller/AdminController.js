@@ -1,12 +1,11 @@
 const jwt = require("jsonwebtoken");
-const bcrypt = require('bcryptjs');
+const bcrypt = require("bcryptjs");
 const AdminModel = require("../Models/AdminModel");
+// const checkDisable = require("../Middleware/CheckDisable")
 const multer = require("multer");
 const path = require("path");
-const crypto = require('crypto');
-const nodemailer = require('nodemailer');
+const nodemailer = require("nodemailer");
 require("dotenv").config();
-
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -18,10 +17,38 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
+exports.upload = upload;
 
 exports.AdminRegister = async (req, res) => {
   try {
-    const { first, last, email, password, phone, designation, empId } = req.body;
+    const { first, last, email, password, phone, designation, empId, superAdmin } = req.body;
+
+    if(!first){
+      return res.status(404).json({message: "First name is required"});
+    }
+
+    if(!last){
+      return res.status(404).json({message: "Last name is required"});
+    }
+
+    if(!email){
+      return res.status(404).json({message: "Email is required"});
+    }
+    
+    if(!phone){
+      return res.status(404).json({message: "Phone Number is required"});
+    }
+    
+    if(!designation){
+      return res.status(404).json({message: "Designation is required"});
+    }
+    
+    if(!empId){
+      return res.status(404).json({message: "Employee ID is required"});
+    }
+    if(!password){
+      return res.status(404).json({message: "Password is required"});
+    }
 
     const userExists = await AdminModel.findOne({ email, empId });
     if (userExists) {
@@ -29,7 +56,7 @@ exports.AdminRegister = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const image = req.file ? `/uploads/${req.file.filename}` : null; 
+    const image = req.file ? `/uploads/${req.file.filename}` : null;
 
     const user = await AdminModel.create({
       first,
@@ -39,7 +66,8 @@ exports.AdminRegister = async (req, res) => {
       designation,
       empId,
       password: hashedPassword,
-      image, 
+      image,
+      superAdmin,
     });
 
     res.status(201).json({ message: "Registration Successful" });
@@ -49,24 +77,52 @@ exports.AdminRegister = async (req, res) => {
   }
 };
 
-exports.upload = upload;
-
 exports.AdminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
+
+    if(!email){
+      return res.status(404).json({message:"Enter your email"})
+    }
+
+    if(!password){
+      return res.status(404).json({message:"Enter your password"})
+    }
 
     const user = await AdminModel.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
+    const currentTime = new Date();
+    const istTime = new Date(currentTime.getTime() + 5.5 * 60 * 60 * 1000);
+
+    if (user && user.disabledUntil && user.disabledUntil > istTime) {
+      return res
+        .status(403)
+        .json({ message: `Login disabled. Try again after ${Math.round((user.disabledUntil - istTime)/(60*1000))} minutes.` });
+    }
+
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) {
+      user.loginAttempts += 1;
+      await user.save();
+
+      if (user.loginAttempts >= 3) {
+        user.disabledUntil = new Date(istTime.getTime() + 30 * 60 * 1000);
+        await user.save();
+        return res
+          .status(403)
+          .json({ message: `Login disabled. Try again after 30 minutes` });
+      }
       return res.status(404).json({ message: "Wrong password" });
     }
 
+    user.loginAttempts = undefined;
+    await user.save();
+
     const token = jwt.sign({ userId: user._id }, "your_secret_key");
-    res.json({ token });
+    return res.json({ message: "Login successful", token });
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: "Login failed" });
@@ -98,26 +154,25 @@ exports.AdminDataUpdate = async (req, res) => {
   }
 };
 
-
 exports.userDataUpdate = async (req, res) => {
   const userId = req.params.userId;
-  const { first, last, phone, email, designation } = req.body;  
-  
+  const { first, last, phone, email, designation } = req.body;
+
   try {
     const updatedUser = await AdminModel.findByIdAndUpdate(
       userId,
       { first, last, phone, email, designation },
-      { new: true } 
+      { new: true }
     );
-    
+
     if (!updatedUser) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: "User not found" });
     }
-    
+
     res.status(200).json(updatedUser);
   } catch (error) {
-    console.error('Error updating user:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error updating user:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -139,7 +194,6 @@ exports.AdminProfile = async (req, res) => {
     res.status(401).send({ message: "Invalid token" });
   }
 };
-
 
 exports.AdminUpdateProfile = async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -179,30 +233,31 @@ exports.AdminUpdateProfile = async (req, res) => {
   }
 };
 
-
 exports.sendmail = async (req, res) => {
   const { email } = req.body;
   try {
     const user = await AdminModel.findOne({ email });
     if (!user) {
-      return res.status(400).json({ message: 'User does not exist' });
+      return res.status(400).json({ message: "User does not exist" });
     }
 
-    const token = crypto.randomBytes(20).toString('hex');
+    const token = jwt.sign({ userId: user._id }, "your_secret_key", {
+      expiresIn: "1h",
+    });
 
     user.resetPasswordToken = token;
-    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    user.resetPasswordExpires = Date.now() + 3600000;
     await user.save();
 
     const transporter = nodemailer.createTransport({
-      service: 'Gmail',
+      service: "Gmail",
       auth: {
         user: process.env.USER,
         pass: process.env.PASSWORD,
       },
     });
 
-    const resetUrl = `http://localhost:3000/reset-password/${token}`;
+    const resetUrl = `http://localhost:3000/reset-password/${user._id}/${token}`;
 
     const htmlContent = `
     <!doctype html>
@@ -245,7 +300,7 @@ exports.sendmail = async (req, res) => {
                                             <span
                                                 style="display:inline-block; vertical-align:middle; margin:29px 0 26px; border-bottom:1px solid #cecece; width:100px;"></span>
                                             <p style="color:#455056; font-size:15px;line-height:24px; margin:0;">
-                                                We cannot simply send you your old password. A unique link to reset your
+                                                You are receiving this because you (or someone else) have requested the reset of the password for your account. A unique link to reset your
                                                 password has been generated for you. To reset your password, click the
                                                 following link and follow the instructions.
                                             </p>
@@ -283,7 +338,7 @@ exports.sendmail = async (req, res) => {
     const mailOptions = {
       to: user.email,
       from: `"Abhishek Singh" <${process.env.USER}>`,
-      subject: 'Password Reset',
+      subject: "Password Reset",
       text: `You are receiving this because you (or someone else) have requested the reset of the password for your account.\n\n
             Please click on the following link, or paste this into your browser to complete the process:\n\n
             ${resetUrl}\n\n
@@ -293,44 +348,44 @@ exports.sendmail = async (req, res) => {
 
     transporter.sendMail(mailOptions, (err, response) => {
       if (err) {
-        console.error('There was an error: ', err);
-        return res.status(500).json({ message: 'Error sending email' });
+        console.error("There was an error: ", err);
+        return res.status(500).json({ message: "Error sending email" });
       } else {
-        res.status(200).json('Recovery email sent');
+        res.status(200).json("Recovery email sent");
       }
     });
-
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: "Server error" });
   }
 };
-
-
 
 exports.resetpassword = async (req, res) => {
   const { password } = req.body;
   try {
       const user = await AdminModel.findOne({
-          resetPasswordToken: req.params.token,
-          resetPasswordExpires: { $gt: Date.now() }
+        resetPasswordToken: req.params.token,
+        resetPasswordExpires: { $gt: Date.now() },
       });
 
-      if (!user) {
-          return res.status(400).json({ message: 'Password reset token is invalid or has expired' });
-      }
+    if (!user) {
+      return res.status(400).json({ message: "Password reset token is invalid or has expired" });
+    }
 
-      
-      const hashedPassword = await bcrypt.hash(password, 10);
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    if (passwordMatch) {
+      return res.status(404).json({ message: "Try new password" });
+    }
 
-      user.password = hashedPassword;
-      user.resetPasswordToken = undefined;
-      user.resetPasswordExpires = undefined;
-      await user.save();
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-      res.status(200).json({ message: 'Password has been reset' });
+    user.password = hashedPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
 
+    res.status(200).json({ message: "Password has been reset" });
   } catch (error) {
-      console.error(error); 
-      res.status(500).json({ message: 'Server error' });
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
   }
 };

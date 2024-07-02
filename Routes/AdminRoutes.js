@@ -1,16 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const {resetpassword, sendmail, userDataUpdate, AdminDataUpdate, AdminData, AdminRegister, AdminLogin, AdminProfile, AdminUpdateProfile, upload } = require('../Controller/AdminController');
+const {resetPassword, sendMail, userDataUpdate, adminData, adminRegister, adminLogin, adminProfile, adminUpdateProfile, upload, userDelete } = require('../Controller/AdminController');
 // const {CheckDisable} = require("../Middleware/CheckDisable")
 
-router.post('/login', AdminLogin);
-router.post('/register', upload.single('image'), AdminRegister); 
-router.get('/profile', AdminProfile);
-router.put('/profile/update', AdminUpdateProfile);
-router.get('/user/data', AdminData);
-router.put('/user/deactivate/:userId',AdminDataUpdate);
+// router.get('/captcha', getCaptcha);
+router.post('/login', adminLogin);
+router.post('/register', upload.single('image'), adminRegister); 
+router.get('/profile', adminProfile);
+router.put('/profile/update', adminUpdateProfile);
+router.get('/user/data', adminData);
+router.put('/user/deactivate/:userId', userDelete);
 router.put('/user/update/:userId', userDataUpdate);
-router.post('/users/forgotpassword', sendmail);
-router.put('/users/reset-password/:id/:token', resetpassword);
+router.post('/users/forgotpassword', sendMail);
+router.put('/users/reset-password/:id/:token', resetPassword);
 
 module.exports = router;

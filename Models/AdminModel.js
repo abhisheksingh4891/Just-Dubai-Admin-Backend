@@ -25,6 +25,10 @@ const AdminSchema = mongoose.Schema({
     type: String,
     required: true,
   },
+  dateOfBirth: {
+    type: Date,
+    required: true,
+  },
   empId: {
     type: Number,
     required: true,

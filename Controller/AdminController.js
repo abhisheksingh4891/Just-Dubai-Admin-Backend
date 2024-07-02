@@ -1,8 +1,7 @@
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const AdminModel = require("../Models/AdminModel");
-// const checkDisable = require("../Middleware/CheckDisable")
 const multer = require("multer");
+const AdminModel = require("../Models/AdminModel");
 const path = require("path");
 const nodemailer = require("nodemailer");
 require("dotenv").config();
@@ -19,35 +18,26 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 exports.upload = upload;
 
-exports.AdminRegister = async (req, res) => {
+// registeration controller
+exports.adminRegister = async (req, res) => {
   try {
-    const { first, last, email, password, phone, designation, empId, superAdmin } = req.body;
+    const { first, last, email, password, phone, designation, empId, dateOfBirth, superAdmin } = req.body;
 
-    if(!first){
-      return res.status(404).json({message: "First name is required"});
-    }
+    const requiredFields = {
+      first: "First name is required",
+      last: "Last name is required",
+      email: "Email is required",
+      password: "Password is required",
+      phone: "Phone number is required",
+      dateOfBirth: "Date of birth is required",
+      designation: "Designation is required",
+      empId: "Employee ID is required",
+    };
 
-    if(!last){
-      return res.status(404).json({message: "Last name is required"});
-    }
-
-    if(!email){
-      return res.status(404).json({message: "Email is required"});
-    }
-    
-    if(!phone){
-      return res.status(404).json({message: "Phone Number is required"});
-    }
-    
-    if(!designation){
-      return res.status(404).json({message: "Designation is required"});
-    }
-    
-    if(!empId){
-      return res.status(404).json({message: "Employee ID is required"});
-    }
-    if(!password){
-      return res.status(404).json({message: "Password is required"});
+    for (const [field, message] of Object.entries(requiredFields)) {
+      if (!req.body[field]) {
+        return res.status(400).json({ message });
+      }
     }
 
     const userExists = await AdminModel.findOne({ email, empId });
@@ -58,6 +48,10 @@ exports.AdminRegister = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const image = req.file ? `/uploads/${req.file.filename}` : null;
 
+    if(image === null){
+      return res.status(400).json({message:"Upload your image"})
+    }
+
     const user = await AdminModel.create({
       first,
       last,
@@ -65,6 +59,7 @@ exports.AdminRegister = async (req, res) => {
       phone,
       designation,
       empId,
+      dateOfBirth,
       password: hashedPassword,
       image,
       superAdmin,
@@ -77,16 +72,18 @@ exports.AdminRegister = async (req, res) => {
   }
 };
 
-exports.AdminLogin = async (req, res) => {
+
+// login controller
+exports.adminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
     if(!email){
-      return res.status(404).json({message:"Enter your email"})
+      return res.status(400).json({message:"Enter your email"})
     }
 
     if(!password){
-      return res.status(404).json({message:"Enter your password"})
+      return res.status(400).json({message:"Enter your password"})
     }
 
     const user = await AdminModel.findOne({ email });
@@ -109,6 +106,7 @@ exports.AdminLogin = async (req, res) => {
       await user.save();
 
       if (user.loginAttempts >= 3) {
+        user.loginAttempts=0;
         user.disabledUntil = new Date(istTime.getTime() + 30 * 60 * 1000);
         await user.save();
         return res
@@ -117,123 +115,21 @@ exports.AdminLogin = async (req, res) => {
       }
       return res.status(404).json({ message: "Wrong password" });
     }
-
-    user.loginAttempts = undefined;
+    
+    user.loginAttempts = 1;
     await user.save();
-
+    
     const token = jwt.sign({ userId: user._id }, "your_secret_key");
-    return res.json({ message: "Login successful", token });
+    return res.status(201).json({ message: "Login successful", token, superAdmin: user.superAdmin });
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: "Login failed" });
   }
 };
 
-exports.AdminData = async (req, res) => {
-  try {
-    const allData = await AdminModel.find({});
-    res.json(allData);
-  } catch (error) {
-    console.error("Error fetching data:", error);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-};
 
-exports.AdminDataUpdate = async (req, res) => {
-  try {
-    const userId = req.params.userId;
-    const updatedUser = await AdminModel.findByIdAndUpdate(
-      userId,
-      { active: false },
-      { new: true }
-    );
-    res.json(updatedUser);
-  } catch (error) {
-    console.error("Error deactivating user:", error);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-};
-
-exports.userDataUpdate = async (req, res) => {
-  const userId = req.params.userId;
-  const { first, last, phone, email, designation } = req.body;
-
-  try {
-    const updatedUser = await AdminModel.findByIdAndUpdate(
-      userId,
-      { first, last, phone, email, designation },
-      { new: true }
-    );
-
-    if (!updatedUser) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    res.status(200).json(updatedUser);
-  } catch (error) {
-    console.error("Error updating user:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-};
-
-exports.AdminProfile = async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).send({ message: "Unauthorized" });
-  }
-  const token = authHeader.split(" ")[1];
-  try {
-    const decoded = jwt.verify(token, "your_secret_key");
-    const user = await AdminModel.findById(decoded.userId);
-    if (!user) {
-      return res.status(404).send({ message: "User not found" });
-    }
-    res.json(user);
-  } catch (err) {
-    console.error("Token validation error", err);
-    res.status(401).send({ message: "Invalid token" });
-  }
-};
-
-exports.AdminUpdateProfile = async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-  const token = authHeader.split(" ")[1];
-  try {
-    const decoded = jwt.verify(token, "your_secret_key");
-    const userId = decoded.userId;
-
-    let user = await AdminModel.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const { first, last, email, phone, designation } = req.body;
-    user.first = first || user.first;
-    user.last = last || user.last;
-    user.email = email || user.email;
-    user.phone = phone || user.phone;
-    user.designation = designation || user.designation;
-
-    await user.save();
-
-    res.json({
-      _id: user._id,
-      first: user.first,
-      last: user.last,
-      email: user.email,
-      phone: user.phone,
-      designation: user.designation,
-    });
-  } catch (err) {
-    console.error("Token validation error", err);
-    res.status(401).json({ message: "Invalid token" });
-  }
-};
-
-exports.sendmail = async (req, res) => {
+// sending using nodemailer
+exports.sendMail = async (req, res) => {
   const { email } = req.body;
   try {
     const user = await AdminModel.findOne({ email });
@@ -359,7 +255,9 @@ exports.sendmail = async (req, res) => {
   }
 };
 
-exports.resetpassword = async (req, res) => {
+
+// password rest controller 
+exports.resetPassword = async (req, res) => {
   const { password } = req.body;
   try {
       const user = await AdminModel.findOne({
@@ -389,3 +287,133 @@ exports.resetpassword = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+
+// fetching all user data in remove user page
+exports.adminData = async (req, res) => {
+  try {
+    const allData = await AdminModel.find({});
+    res.status(201).json(allData);
+  } catch (error) {
+    console.error("Error fetching data:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+
+// deleting user from remove user page
+exports.userDelete = async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const updatedUser = await AdminModel.findByIdAndUpdate(
+      userId,
+      { active: false },
+      { new: true }
+    );
+    res.status(201).json(updatedUser);
+  } catch (error) {
+    console.error("Error deactivating user:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// update user data from remove user page
+exports.userDataUpdate = async (req, res) => {
+  const userId = req.params.userId;
+  const { first, last, phone, email, designation } = req.body;
+
+  try {
+    const updatedUser = await AdminModel.findByIdAndUpdate(
+      userId,
+      { first, last, phone, email, designation },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    console.error("Error updating user:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+
+// user profile authorization
+exports.adminProfile = async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).send({ message: "Unauthorized" });
+  }
+  const token = authHeader.split(" ")[1];
+  try {
+    const decoded = jwt.verify(token, "your_secret_key");
+    const user = await AdminModel.findById(decoded.userId);
+    if (!user) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    const formattedUser = {
+      ...user._doc,
+      dateOfBirth: user.dateOfBirth.toISOString().split('T')[0]
+    };
+
+    res.json(formattedUser);
+  } catch (err) {
+    console.error("Token validation error", err);
+    res.status(401).send({ message: "Invalid token" });
+  }
+};
+
+// user profile update
+exports.adminUpdateProfile = async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  const token = authHeader.split(" ")[1];
+  try {
+    const decoded = jwt.verify(token, "your_secret_key");
+    const userId = decoded.userId;
+
+    let user = await AdminModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Only update fields that are provided in req.body
+    const { first, last, email, phone, designation, dateOfBirth } = req.body;
+
+    user.first = first || user.first;
+    user.last = last || user.last;
+    user.email = email || user.email;
+    user.phone = phone || user.phone;
+    user.designation = designation || user.designation;
+    user.dateOfBirth = dateOfBirth || user.dateOfBirth;
+
+    // Check if password is provided and update it separately
+    if (req.body.password) {
+      const hashedPassword = await bcrypt.hash(req.body.password, 10);
+      user.password = hashedPassword;
+    }
+
+    await user.save();
+
+    res.json({
+      _id: user._id,
+      first: user.first,
+      last: user.last,
+      email: user.email,
+      phone: user.phone,
+      designation: user.designation,
+      dateOfBirth: user.dateOfBirth,
+    });
+  } catch (err) {
+    console.error("Token validation error", err);
+    res.status(401).json({ message: "Invalid token" });
+  }
+};
+
+

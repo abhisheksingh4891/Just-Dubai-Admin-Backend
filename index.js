@@ -1,5 +1,4 @@
 const express = require("express");
-const session = require('express-session');
 const cors = require("cors");
 const dotenv = require('dotenv');
 const path = require('path');
@@ -16,12 +15,6 @@ const NewsRoutes = require('./Routes/PostRoutes/NewsRoutes')
 const app = express();
 app.use(express.json());
 app.use(cors())
-app.use(session({
-  secret: 'your_secret_key', // Replace with a strong secret key for session encryption
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: false } // Set to true if using HTTPS
-}));
 
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

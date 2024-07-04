@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const {resetPassword, sendMail, userDataUpdate, adminData, adminRegister, adminLogin, adminProfile, adminUpdateProfile, upload, userDelete } = require('../Controller/AdminController');
+const {resetPassword, sendMail, userDataUpdate, adminData, adminRegister, adminLogin, adminProfile, adminUpdateProfile, upload, userDelete, resetEmail } = require('../Controller/AdminController');
 // const {CheckDisable} = require("../Middleware/CheckDisable")
 
 // router.get('/captcha', getCaptcha);
@@ -13,5 +13,6 @@ router.put('/user/deactivate/:userId', userDelete);
 router.put('/user/update/:userId', userDataUpdate);
 router.post('/users/forgotpassword', sendMail);
 router.put('/users/reset-password/:id/:token', resetPassword);
+router.put('/users/reset-email/:token', resetEmail);
 
 module.exports = router;

@@ -51,6 +51,8 @@ const AdminSchema = mongoose.Schema({
   },
   resetPasswordToken: String,
   resetPasswordExpires: Date,
+  emailResetToken: String,
+  emailResetExpires: Date,
   loginAttempts: {
     type: Number,
     default: 0,

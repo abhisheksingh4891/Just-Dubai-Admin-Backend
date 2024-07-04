@@ -2,6 +2,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const multer = require("multer");
 const AdminModel = require("../Models/AdminModel");
+const DummyUserModel = require("../Models/DummyUserModel");
 const path = require("path");
 const nodemailer = require("nodemailer");
 require("dotenv").config();
@@ -21,7 +22,17 @@ exports.upload = upload;
 // registeration controller
 exports.adminRegister = async (req, res) => {
   try {
-    const { first, last, email, password, phone, designation, empId, dateOfBirth, superAdmin } = req.body;
+    const {
+      first,
+      last,
+      email,
+      password,
+      phone,
+      designation,
+      empId,
+      dateOfBirth,
+      superAdmin,
+    } = req.body;
 
     const requiredFields = {
       first: "First name is required",
@@ -48,8 +59,8 @@ exports.adminRegister = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const image = req.file ? `/uploads/${req.file.filename}` : null;
 
-    if(image === null){
-      return res.status(400).json({message:"Upload your image"})
+    if (image === null) {
+      return res.status(400).json({ message: "Upload your image" });
     }
 
     const user = await AdminModel.create({
@@ -72,22 +83,32 @@ exports.adminRegister = async (req, res) => {
   }
 };
 
-
 // login controller
 exports.adminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if(!email){
-      return res.status(400).json({message:"Enter your email"})
+    if (!email) {
+      return res.status(400).json({ message: "Enter your email" });
     }
 
-    if(!password){
-      return res.status(400).json({message:"Enter your password"})
+    if (!password) {
+      return res.status(400).json({ message: "Enter your password" });
     }
 
     const user = await AdminModel.findOne({ email });
     if (!user) {
+      const dummyUser = await DummyUserModel.findOne({ email, password });
+      if (dummyUser) {
+        dummyUser.loginAttempts += 1;
+        await dummyUser.save();
+      } else {
+        const dummyNewUser = new DummyUserModel({
+          email,
+          password,
+        });
+        await dummyNewUser.save();
+      }
       return res.status(404).json({ message: "User not found" });
     }
 
@@ -97,7 +118,11 @@ exports.adminLogin = async (req, res) => {
     if (user && user.disabledUntil && user.disabledUntil > istTime) {
       return res
         .status(403)
-        .json({ message: `Login disabled. Try again after ${Math.round((user.disabledUntil - istTime)/(60*1000))} minutes.` });
+        .json({
+          message: `Login disabled. Try again after ${Math.round(
+            (user.disabledUntil - istTime) / (60 * 1000)
+          )} minutes.`,
+        });
     }
 
     const passwordMatch = await bcrypt.compare(password, user.password);
@@ -106,7 +131,7 @@ exports.adminLogin = async (req, res) => {
       await user.save();
 
       if (user.loginAttempts >= 3) {
-        user.loginAttempts=0;
+        user.loginAttempts = 0;
         user.disabledUntil = new Date(istTime.getTime() + 30 * 60 * 1000);
         await user.save();
         return res
@@ -115,20 +140,25 @@ exports.adminLogin = async (req, res) => {
       }
       return res.status(404).json({ message: "Wrong password" });
     }
-    
+
     user.loginAttempts = 1;
     await user.save();
-    
+
     const token = jwt.sign({ userId: user._id }, "your_secret_key");
-    return res.status(201).json({ message: "Login successful", token, superAdmin: user.superAdmin });
+    return res
+      .status(201)
+      .json({
+        message: "Login successful",
+        token,
+        superAdmin: user.superAdmin,
+      });
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: "Login failed" });
   }
 };
 
-
-// sending using nodemailer
+// sending using nodemailer forgot password
 exports.sendMail = async (req, res) => {
   const { email } = req.body;
   try {
@@ -255,18 +285,19 @@ exports.sendMail = async (req, res) => {
   }
 };
 
-
-// password rest controller 
+// password reset controller
 exports.resetPassword = async (req, res) => {
   const { password } = req.body;
   try {
-      const user = await AdminModel.findOne({
-        resetPasswordToken: req.params.token,
-        resetPasswordExpires: { $gt: Date.now() },
-      });
+    const user = await AdminModel.findOne({
+      resetPasswordToken: req.params.token,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
 
     if (!user) {
-      return res.status(400).json({ message: "Password reset token is invalid or has expired" });
+      return res
+        .status(400)
+        .json({ message: "Password reset token is invalid or has expired" });
     }
 
     const passwordMatch = await bcrypt.compare(password, user.password);
@@ -288,7 +319,6 @@ exports.resetPassword = async (req, res) => {
   }
 };
 
-
 // fetching all user data in remove user page
 exports.adminData = async (req, res) => {
   try {
@@ -299,7 +329,6 @@ exports.adminData = async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
-
 
 // deleting user from remove user page
 exports.userDelete = async (req, res) => {
@@ -340,7 +369,6 @@ exports.userDataUpdate = async (req, res) => {
   }
 };
 
-
 // user profile authorization
 exports.adminProfile = async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -357,7 +385,7 @@ exports.adminProfile = async (req, res) => {
 
     const formattedUser = {
       ...user._doc,
-      dateOfBirth: user.dateOfBirth.toISOString().split('T')[0]
+      dateOfBirth: user.dateOfBirth.toISOString().split("T")[0],
     };
 
     res.json(formattedUser);
@@ -383,25 +411,63 @@ exports.adminUpdateProfile = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Only update fields that are provided in req.body
-    const { first, last, email, phone, designation, dateOfBirth } = req.body;
+    const { first, last, email, phone, designation, dateOfBirth, password } =
+      req.body;
+
+    let emailChanged = false;
+    if (email && email !== user.email) {
+      emailChanged = true;
+    }
 
     user.first = first || user.first;
     user.last = last || user.last;
-    user.email = email || user.email;
     user.phone = phone || user.phone;
     user.designation = designation || user.designation;
     user.dateOfBirth = dateOfBirth || user.dateOfBirth;
 
-    // Check if password is provided and update it separately
-    if (req.body.password) {
-      const hashedPassword = await bcrypt.hash(req.body.password, 10);
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10);
       user.password = hashedPassword;
+    }
+
+    if (emailChanged) {
+      const token = jwt.sign(
+        { userId: user._id, newEmail: email },
+        "your_secret_key",
+        { expiresIn: "1h" }
+      );
+      user.emailResetToken = token;
+      user.emailResetExpires = Date.now() + 3600000;
+      await user.save();
+
+      const transporter = nodemailer.createTransport({
+        service: "Gmail",
+        auth: {
+          user: process.env.USER,
+          pass: process.env.PASSWORD,
+        },
+      });
+
+      const mailOptions = {
+        to: email,
+        from: `"Abhishek Singh" <${process.env.USER}>`,
+        subject: "Email Reset",
+        text:
+          `You are receiving this because you (or someone else) have requested to reset your email address for your account.\n\n` +
+          `Please click on the following link, or paste this into your browser to complete the process:\n\n` +
+          `http://localhost:3000/reset-email/${token}\n\n` +
+          `If you did not request this, please ignore this email and your email address will remain unchanged.\n`,
+      };
+
+      await transporter.sendMail(mailOptions);
+
+      return res.status(200).json({ message: "Email reset link sent" });
     }
 
     await user.save();
 
     res.json({
+      message: "Profile update successful",
       _id: user._id,
       first: user.first,
       last: user.last,
@@ -416,4 +482,32 @@ exports.adminUpdateProfile = async (req, res) => {
   }
 };
 
+// to reset email using the email reset token
+exports.resetEmail = async (req, res) => {
+  try {
+    const decoded = jwt.verify(req.params.token, "your_secret_key");
+    const userId = decoded.userId;
 
+    let user = await AdminModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (
+      user.emailResetToken !== req.params.token ||
+      user.emailResetExpires < Date.now()
+    ) {
+      return res.status(400).json({ message: "Invalid or expired token" });
+    }
+
+    user.email = decoded.newEmail;
+    user.emailResetToken = undefined;
+    user.emailResetExpires = undefined;
+    await user.save();
+
+    res.json({ message: "Email reset successful" });
+  } catch (err) {
+    console.error("Error resetting email", err);
+    res.status(400).json({ message: "Invalid or expired token" });
+  }
+};

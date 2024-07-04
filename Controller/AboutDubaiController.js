@@ -15,6 +15,7 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
+exports.upload = upload;
 
 exports.FestivalPost = async (req, res) => {
   try {
@@ -120,5 +121,4 @@ exports.InterestingFactsPost = async (req, res) => {
   }
 };
 
-exports.upload = upload;
 
